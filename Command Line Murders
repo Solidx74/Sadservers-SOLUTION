@@ -1,0 +1,125 @@
+# Command Line Murders
+
+**Category:** Linux / Command Line  
+**Difficulty:** Easy  
+**OS:** Debian 11  
+**Tools:** `grep`, `head`, `tail`, `cat`, `md5sum`
+
+## 1. Challenge Overview
+
+The objective was to identify the murderer in a modified version of [The Command Line Murders](https://github.com/veltman/clmystery) and save the exact name in `/home/admin/mysolution`.
+
+The challenge provided an MD5 checksum to validate the answer:
+
+```text
+9bba101c7369f49ca890ea96aa242dd5
+```
+
+## 2. Extracting the Crime-Scene Clues
+
+I navigated to the investigation directory and searched for lines marked `CLUE`:
+
+```bash
+cd /home/admin/clmystery/mystery
+grep "CLUE" crimescene
+```
+
+The investigation revealed three important clues:
+
+- The murderer was male and at least 6 feet tall.
+- The murderer's wallet contained memberships for Rotary Club, Delta SkyMiles, the local library, and the Museum of Bash History.
+- A woman named Annabel had left the coffee shop shortly before the shooting. She had blond spiky hair and a New Zealand accent.
+
+## 3. Identifying the Witness
+
+I searched the people database for all records containing Annabel:
+
+```bash
+grep "Annabel" people
+```
+
+The results included multiple people, so I used their addresses and street records to locate the relevant interviews.
+
+For example:
+
+```bash
+head -n 40 streets/Hart_Place | tail -n 1
+head -n 179 streets/Buckingham_Place | tail -n 1
+```
+
+These commands retrieved the relevant street entries, which pointed to interview IDs `47246024` and `699607`.
+
+I then read the interview files:
+
+```bash
+cat interviews/interview-47246024
+cat interviews/interview-699607
+```
+
+The first interview ruled out Annabel Sun because she had brown hair and was not from New Zealand. The second interview described a blue Honda that fled the crime scene.
+
+## 4. Tracking the Suspect's Vehicle
+
+I searched the vehicle database for the license-plate prefix:
+
+```bash
+grep "L337" vehicles
+```
+
+To inspect the details surrounding each matching plate, I used:
+
+```bash
+grep -n -B 5 -A 5 "L337" vehicles
+```
+
+The output included vehicle makes, colors, owners, and heights. I compared the records against the witness's description of a blue Honda with a plate starting with `L337` and ending in `9`.
+
+## 5. Cross-Referencing Membership Records
+
+I used `grep -Fxf` to identify names shared by the membership lists:
+
+```bash
+grep -Fxf memberships/Rotary_Club memberships/Delta_SkyMiles \
+  | grep -Fxf memberships/Museum_of_Bash_History \
+  | grep -Fxf memberships/Terminal_City_Library
+```
+
+This produced a list of candidates who appeared in all four membership files.
+
+The membership intersection, vehicle evidence, and height clue must be cross-referenced to establish the correct suspect.
+
+## 6. Verifying the Answer
+
+The challenge requires the exact suspect name to be written to the solution file:
+
+```bash
+echo "SUSPECT NAME" > /home/admin/mysolution
+```
+
+I checked the file's checksum and ran the challenge's verification script:
+
+```bash
+md5sum /home/admin/mysolution
+/home/admin/agent/check.sh
+```
+
+The expected checker output is:
+
+```text
+OK
+```
+
+My initial attempted answer returned `NO`, so the final suspect still needs to be verified against the expected checksum before this challenge can be marked as successfully completed.
+
+## 7. What I Learned
+
+- Use `grep` to extract relevant evidence from large text files.
+- Use `head` and `tail` together to retrieve a specific line.
+- Use `cat` to read interview reports.
+- Use `grep -Fxf` to intersect lists of names.
+- Combine independent clues rather than relying on a single matching record.
+- Use `md5sum` and the provided checker to validate the final answer.
+
+## Conclusion
+
+This challenge demonstrates how standard Linux command-line utilities can be combined to investigate a large collection of text files systematically. The key is to extract evidence, follow references between files, cross-check candidates, and verify the final result rather than guessing based on the original version of the challenge.
