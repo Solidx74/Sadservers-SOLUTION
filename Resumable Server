@@ -1,0 +1,274 @@
+# SadServers: Resumable Server — Linux Administration Lab
+
+## Overview
+
+- **Platform:** [SadServers](https://sadservers.com/)
+- **Scenario:** Resumable Server — Linux Upskill Challenge
+- **Operating system:** Debian GNU/Linux 11 (Bullseye)
+- **Difficulty:** Easy
+- **Test:** None
+- **Purpose:** Hands-on Linux administration practice
+
+This scenario is a resumable Debian practice server, not a broken-system puzzle. There is no flag or repair test to pass. I used the session to practise Linux host reconnaissance, systemd inspection, network diagnostics, SSH configuration review, account auditing, and log analysis.
+
+> **Scope note:** This write-up documents observations from my session. It does not claim that the host was compromised or that a security incident occurred. SadServers warns users not to interfere with its support services, especially ports `2020` and `6767`.
+
+## 1. Initial Host Reconnaissance
+
+### Commands
+
+```bash
+whoami
+id
+cat /etc/os-release
+uname -a
+uptime
+free -h
+df -h
+pwd
+ls -lah ~
+ip address
+ip route
+ps aux
+```
+
+### Findings
+
+- Current account: `admin`, UID `1000`.
+- OS: Debian GNU/Linux 11 (Bullseye).
+- Kernel: `5.10.0-25-cloud-amd64`, x86_64.
+- Home directory: `/home/admin`.
+- Network interface: `ens5`, address `10.1.13.235/24`.
+- Default gateway: `10.1.13.1`.
+- Memory: approximately `453 MiB`, with about `365 MiB` available at the time.
+- Root filesystem: approximately `7.7 GiB`, with about `6.1 GiB` available.
+
+Resource usage and interface addresses are point-in-time observations and may differ after a reboot or a new session.
+
+## 2. Process and systemd Investigation
+
+I identified the SadServers agent process and traced it to its systemd service.
+
+### Commands
+
+```bash
+ps -o pid,ppid,user,lstart,args -p 567
+readlink /proc/567/cwd
+systemctl status 567 --no-pager
+systemctl cat sadagent.service
+sudo journalctl -u sadagent.service -n 30 --no-pager -l
+readlink -f /proc/567/exe
+ps -p 567 -o pid,user,etime,%cpu,%mem,cmd
+```
+
+### Findings
+
+The process was running as `admin`, with PID `567`. Its working directory and executable path were:
+
+```text
+/home/admin/agent
+/home/admin/agent/sadagent
+```
+
+The service unit contained:
+
+```ini
+[Unit]
+Description=Agent
+
+[Service]
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/agent
+ExecStart=/home/admin/agent/sadagent
+Restart=on-failure
+Nice=-15
+
+[Install]
+WantedBy=multi-user.target
+```
+
+What these settings mean:
+
+- `User` and `Group` specify the account context for the service.
+- `WorkingDirectory` sets the process's working directory.
+- `ExecStart` specifies the executable systemd launches.
+- `Restart=on-failure` requests a restart after an unsuccessful exit.
+- `Nice=-15` requests higher CPU scheduling priority than the default nice value; a negative nice value normally requires suitable privileges.
+
+## 3. Executable Inspection and HTTP Checks
+
+### Commands
+
+```bash
+ls -lah ~/agent
+stat ~/agent
+find ~/agent -maxdepth 2 -type f -ls
+file ~/agent/sadagent
+cat ~/agent/sadagent.txt
+ss -lntp | grep 6767
+curl -i http://127.0.0.1:6767/ping
+curl -i http://127.0.0.1:6767/gethistory
+curl -i http://127.0.0.1:6767/getlog
+```
+
+### Findings
+
+- `sadagent` was an approximately 11 MB, 64-bit x86-64 ELF executable, dynamically linked and not stripped.
+- It was identified as a Go-built executable.
+- `sadagent.txt` existed but was empty.
+- Port `6767` was already occupied by the running `sadagent` process.
+- Running `~/agent/sadagent --help` did not display help. It attempted to start another server and failed because port `6767` was already in use.
+- The `strings` utility was not installed, so that command could not run.
+
+The running service returned these results:
+
+| Endpoint | Observed result | Interpretation |
+|---|---|---|
+| `/ping` | HTTP `200`, body `pong` | Health endpoint responded |
+| `/gethistory` | HTTP `200`, JSON containing `root_history` and `user_history` | Endpoint returned data |
+| `/getlog` | HTTP `200`, text log | Endpoint returned log information |
+| `/checkcommand` | HTTP `406` for the requests tried | Request was not accepted under the endpoint's current rules |
+| `/checkscript/test` | HTTP `500` for the request tried | Server returned an internal error for that request |
+
+The `root_history` string is response data; it is **not** evidence that the current account is root. The `406` and `500` responses alone do not prove that the support service is broken. I did not modify the service or attempt to repair these endpoints because the scenario has no repair task.
+
+## 4. Listening Network Services
+
+### Command
+
+```bash
+sudo ss -lntp
+```
+
+### Observed listeners
+
+| Port | Process | Purpose / note |
+|---|---|---|
+| `22/tcp` | `sshd` | SSH server |
+| `6767/tcp` | `sadagent` | SadServers support agent — leave running |
+| `8080/tcp` | `gotty` | Browser-based terminal service |
+
+A listening socket shows that a process is listening locally; it does not prove external reachability. I left the support services running.
+
+## 5. SSH Service and Effective Configuration
+
+### Commands
+
+```bash
+systemctl status ssh --no-pager
+sudo journalctl -u ssh -n 30 --no-pager
+sudo ss -lntp
+sudo sshd -T | grep -E '^(permitrootlogin|pubkeyauthentication|passwordauthentication|port|maxauthtries) '
+sudo journalctl -u ssh -b --no-pager | grep -Ei 'failed|invalid user|authentication failure'
+```
+
+### Effective settings observed
+
+```text
+port 22
+maxauthtries 6
+permitrootlogin without-password
+pubkeyauthentication yes
+passwordauthentication no
+```
+
+Interpretation:
+
+- SSH was active and listening on IPv4 and IPv6 port `22`.
+- Public-key authentication was enabled.
+- Password authentication over SSH was disabled.
+- `maxauthtries 6` sets the maximum authentication attempts per connection.
+- `permitrootlogin without-password` is legacy OpenSSH terminology that disallows root password authentication but may permit other methods, such as public-key authentication.
+
+These settings reduce exposure to password guessing, but this was not a full SSH security audit. On a server I administer, I would assess whether root SSH login should be disabled entirely before making configuration changes.
+
+The current-boot SSH journal showed service startup messages. Searches for common failed-authentication phrases returned no matching lines. This means only that the selected queries found no matches; it does not prove that no failed attempts occurred in any log source.
+
+## 6. Login Sessions and User Accounts
+
+### Commands
+
+```bash
+who
+w
+last -n 10
+getent passwd
+getent passwd | cut -d: -f1
+getent group sudo
+id admin
+awk -F: '$7 ~ /(bash|sh|zsh|fish)$/ {print $1, $3, $6, $7}' /etc/passwd
+```
+
+### Findings
+
+- `who` returned no sessions.
+- `w` reported `0 users`.
+- `last -n 10` showed the current boot and older login records.
+- The `sudo` group contained `admin`.
+- The shell-filtering command returned `root` and `admin`.
+
+The historical `last` output contained login records dated September 20, while the current boot began on October 21. Those are historical records, not evidence of logins during the current boot. A source IP address in a login record is not sufficient by itself to classify a login as malicious or legitimate.
+
+The scenario description says root access is unavailable, but the live system's `id` and `sudo -l` output showed `admin` in the `sudo` group and allowed broad sudo commands. This is a discrepancy between the scenario description and the observed environment. I recorded it rather than assuming every SadServers instance has identical permissions.
+
+## 7. Authentication Log Review
+
+I inspected `/var/log/auth.log` for common SSH authentication messages.
+
+```bash
+sudo grep -E 'sshd.*(Failed password|Invalid user|Accepted publickey|Accepted password|authentication failure)' /var/log/auth.log | tail -20
+```
+
+An earlier, broader search also matched `sudo` records generated by my own diagnostic commands. This demonstrated why log filters should distinguish SSH daemon messages from unrelated authentication-log entries.
+
+An empty search result is not proof of a clean system. Results depend on available log files, retention, logging configuration, and the search pattern.
+
+## 8. Important Lessons
+
+1. **Establish context before changing anything.** Identify the OS, account, resources, network, and running processes first.
+2. **Trace processes to systemd.** Combine `ps`, `/proc`, `systemctl`, and `journalctl` to understand how a service runs.
+3. **Check a port before launching another server.** The port-binding error occurred because `sadagent` was already listening on `6767`.
+4. **Interpret HTTP status codes in context.** A `406` or `500` from a test request is a lead to investigate, not automatically proof of a service failure.
+5. **Distinguish historical events from current activity.** Compare timestamps and boot boundaries before drawing conclusions from login records.
+6. **Make log searches specific.** A broad `grep` can match text from a logged command instead of the security event you intended to find.
+7. **Do not disrupt platform support services.** Keep SadServers-required services, especially those on ports `2020` and `6767`, running.
+8. **Record discrepancies carefully.** The scenario metadata and observed sudo privileges did not match. Document the observed output without generalizing beyond this session.
+
+## 9. Further Practice
+
+These optional, read-only exercises can be used to continue learning:
+
+```bash
+# Inspect files and ownership
+ls -lah /home/admin/agent
+stat /home/admin/agent/sadagent
+find /home/admin/agent -maxdepth 2 -type f -printf '%M %u:%g %p\n'
+
+# Inspect service properties and logs
+systemctl show sadagent.service -p MainPID -p User -p Group -p Restart -p Nice -p ExecStart
+sudo journalctl -u sadagent.service -n 50 --no-pager -l
+
+# Inspect permissions on account files
+ls -l /etc/passwd /etc/group
+ls -l /etc/shadow /etc/gshadow
+
+# Inspect SSH-related log entries
+sudo grep -E 'sshd.*(Failed password|Invalid user|Accepted publickey|Accepted password)' /var/log/auth.log | tail -20
+
+# Inspect disk, memory, and sockets
+df -h
+free -h
+sudo ss -lntp
+```
+
+Do not change system files, account permissions, SSH configuration, or SadServers support services simply to make the environment look different. Practise changes in a directory under your home folder unless a lesson explicitly requires otherwise.
+
+## Conclusion
+
+This session was a **Linux host reconnaissance and service-investigation exercise**, not a completed repair challenge. I practised system discovery, systemd inspection, process tracing, local HTTP testing, listening-port analysis, SSH configuration review, account enumeration, and authentication-log filtering. No repair was required by the scenario's design, and I left the support services running.
+
+## References
+
+- [SadServers](https://sadservers.com/) — hands-on Linux troubleshooting and practice scenarios.
+- [Linux Upskill Challenge](https://linuxupskillchallenge.org/) — free, practical Linux command-line and administration lessons.
