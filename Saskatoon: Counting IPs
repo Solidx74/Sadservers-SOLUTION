@@ -1,0 +1,62 @@
+## SadServers – Saskatoon: Counting IPs
+
+**Level:** Easy  
+**OS:** Debian 13
+
+### Solution
+
+I used Linux command-line tools to identify the IP address that made the most HTTP requests in `/home/admin/access.log`.
+
+First, I extracted the IP addresses, counted their occurrences, and sorted the results in descending order:
+
+```bash
+awk '{print $1}' /home/admin/access.log | sort | uniq -c | sort -nr | head
+```
+
+The output showed that `66.249.73.135` was the most frequent IP address, appearing **482 times**.
+
+Next, I saved the IP address to the required solution file:
+
+```bash
+printf '66.249.73.135\n' > /home/admin/highestip.txt
+```
+
+I used `printf` to ensure the file contained the exact IP address followed by a newline.
+
+### Verification
+
+I verified the file's SHA1 checksum:
+
+```bash
+sha1sum /home/admin/highestip.txt
+```
+
+The checksum matched the expected value:
+
+```text
+6ef426c40652babc0d081d438b9f353709008e93
+```
+
+I also confirmed the IP's occurrence count:
+
+```bash
+grep -c -F -f /home/admin/highestip.txt /home/admin/access.log
+```
+
+Output:
+
+```text
+482
+```
+
+Finally, I ran the challenge checker:
+
+```bash
+sudo /home/admin/agent/check.sh
+```
+
+**Result:** Successfully solved. The correct IP address was saved, the checksum matched, and the challenge checker accepted the solution.
+
+### Key Takeaway
+
+This challenge demonstrates how `awk`, `sort`, and `uniq -c` can be combined to analyze web server logs efficiently and identify the most frequent requester without writing a separate script.
