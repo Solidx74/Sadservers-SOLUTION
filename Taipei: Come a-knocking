@@ -1,0 +1,144 @@
+# SadServers — Taipei: Come a-knocking
+
+**Difficulty:** Easy  
+**Operating System:** Debian 11  
+**Category:** Linux, Networking, Port Knocking
+
+## Problem Description
+
+The web server on port `80` was protected by port knocking. The objective was to discover the single TCP port that triggers access, send a SYN knock to that port, and make `curl localhost` return the expected response.
+
+The challenge checker was located at:
+
+```bash
+/home/admin/agent/check.sh
+```
+
+Initially, the checker returned `NO` because the web server was inaccessible.
+
+## Investigation
+
+### 1. Tested HTTP connectivity
+
+```bash
+curl -v http://localhost
+```
+
+The connection to `127.0.0.1:80` failed, indicating that HTTP access was blocked.
+
+### 2. Inspected the checker and running processes
+
+```bash
+cat /home/admin/agent/check.sh
+ps aux
+```
+
+The checker used `curl -s localhost` and verified the response using an MD5 checksum. The process list showed that Nginx and the port-knocking daemon were running.
+
+### 3. Investigated the port-knocking configuration
+
+```bash
+cat /etc/default/knockd
+ps -ef | grep '[k]nockd'
+```
+
+The readable configuration contained:
+
+```text
+START_KNOCKD=1
+KNOCKD_OPTS="-i lo"
+```
+
+This showed that `knockd` was enabled and listening on the loopback interface (`lo`).
+
+However, `/etc/knockd.conf` and `/etc/iptables/rules.v4` were readable only by root, so the `admin` user could not inspect their contents.
+
+### 4. Used the challenge clues
+
+The clues explained that the `knock` utility was available and that a Bash loop could test ports sequentially.
+
+Because this challenge required a single-port knock, I tested individual ports rather than a multi-port sequence.
+
+## Solution
+
+I used a Bash loop to send a knock to each candidate port and test whether HTTP access became available.
+
+```bash
+for port in $(seq 1 10000); do
+    knock 127.0.0.1 "$port" 2>/dev/null
+    if curl -fsS --max-time 0.2 http://localhost -o /tmp/knock_response; then
+        echo "Possible knock port: $port"
+        cat /tmp/knock_response
+        break
+    fi
+done
+```
+
+The script identified:
+
+```text
+Possible knock port: 7006
+```
+
+**The required knock port was TCP port `7006`.**
+
+### 5. Sent the correct knock
+
+To trigger the port-knocking rule directly:
+
+```bash
+knock 127.0.0.1 7006
+```
+
+Then tested the web server:
+
+```bash
+curl localhost
+```
+
+Finally, ran the challenge checker:
+
+```bash
+/home/admin/agent/check.sh
+```
+
+The expected successful output was:
+
+```text
+OK
+```
+
+## How It Worked
+
+Port knocking allows a firewall to change its access rules when it detects a particular packet or sequence of packets. In this challenge, sending a knock to the correct port triggered the rule needed to access the HTTP service.
+
+The key findings were:
+
+- Nginx was running, but HTTP access was initially blocked.
+- `knockd` was enabled and monitoring the loopback interface.
+- The configuration files were protected by root-only permissions.
+- Sequential testing identified port `7006`.
+- Sending the correct knock allowed the HTTP response to pass the challenge checker.
+
+## Commands Used
+
+```bash
+cat /home/admin/agent/check.sh
+curl -v http://localhost
+ps aux
+ss -lnt
+cat /etc/default/knockd
+ps -ef | grep '[k]nockd'
+journalctl -u knockd --no-pager | grep -i knock
+```
+
+## Key Takeaways
+
+1. Use `curl` to establish whether a service is reachable before investigating further.
+2. Inspect running processes and service configuration to understand the system.
+3. Check interface settings when troubleshooting local network services.
+4. A systematic port-by-port approach can reveal a hidden port-knocking trigger when configuration files are inaccessible.
+5. Always run the challenge checker to confirm the solution.
+
+**Final answer:** Knock `127.0.0.1` on port `7006`, then verify with `/home/admin/agent/check.sh`.
+
