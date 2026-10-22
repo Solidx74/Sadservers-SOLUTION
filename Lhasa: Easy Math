@@ -1,0 +1,126 @@
+# SadServers — Lhasa: Easy Math
+
+**Difficulty:** Easy  
+**OS:** Debian 11  
+**Category:** Linux Administration / Shell Scripting  
+**Status:** Solved ✅
+
+## Problem Description
+
+The file `/home/admin/scores.txt` contains two columns:
+
+- **Column 1:** Line number
+- **Column 2:** Test score
+
+The task was to calculate the arithmetic mean of all scores in the second column and save the result to `/home/admin/solution`.
+
+The answer had to contain exactly two digits after the decimal point, **without rounding**.
+
+## Step 1: Inspect the Input File
+
+I checked the first few lines to understand the file format:
+
+```bash
+head /home/admin/scores.txt
+```
+
+Example output:
+
+```text
+1 7.4
+2 0.4
+3 1.6
+4 6.2
+5 7.6
+```
+
+Next, I checked the number of lines:
+
+```bash
+wc -l /home/admin/scores.txt
+```
+
+Output:
+
+```text
+100 /home/admin/scores.txt
+```
+
+This confirmed that the file contained 100 lines.
+
+## Step 2: Calculate the Average
+
+I used Python 3 and the `decimal` module to calculate the mean and truncate the result to two decimal places.
+
+```bash
+python3 -c '
+from decimal import Decimal, ROUND_DOWN
+
+with open("/home/admin/scores.txt") as f:
+    scores = [
+        Decimal(line.split()[1])
+        for line in f
+        if line.strip()
+    ]
+
+avg = sum(scores) / len(scores)
+result = avg.quantize(Decimal("0.00"), rounding=ROUND_DOWN)
+
+with open("/home/admin/solution", "w") as f:
+    f.write(f"{result:.2f}\n")
+'
+```
+
+### How it works
+
+1. Opens `scores.txt` and reads each non-empty line.
+2. Uses `line.split()[1]` to extract the second column.
+3. Converts each score to a `Decimal` value.
+4. Calculates the mean using the sum of scores divided by the number of scores.
+5. Uses `ROUND_DOWN` to truncate the result to two decimal places rather than rounding it.
+6. Writes the formatted result to `/home/admin/solution`.
+
+## Step 3: Verify the Solution
+
+I displayed the generated answer:
+
+```bash
+cat /home/admin/solution
+```
+
+Output:
+
+```text
+5.20
+```
+
+Then, I verified the file using MD5:
+
+```bash
+md5sum /home/admin/solution
+```
+
+Output:
+
+```text
+6d4832eb963012f6d8a71a60fac77168  /home/admin/solution
+```
+
+The checksum matched the expected MD5 provided by SadServers.
+
+## Final Answer
+
+```text
+5.20
+```
+
+**Result:** Solved successfully ✅
+
+## Key Takeaways
+
+- Use `head` to inspect a file quickly.
+- Use `wc -l` to count lines.
+- Use `line.split()[1]` in Python to extract the second column.
+- Use `Decimal` for explicit decimal arithmetic.
+- Use `ROUND_DOWN` when truncation is required instead of conventional rounding.
+- Use `md5sum` to verify that a generated solution file matches an expected checksum.
