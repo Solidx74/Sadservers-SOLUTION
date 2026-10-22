@@ -1,0 +1,155 @@
+# SadServers — Bucharest: Connecting to PostgreSQL
+
+**Difficulty:** Easy  
+**OS:** Debian 13  
+**Category:** PostgreSQL, Linux Administration  
+**Challenge:** Fix PostgreSQL client authentication
+
+## Problem
+
+A web application could no longer connect to its PostgreSQL database after a client-authentication configuration change.
+
+The required connection details were:
+
+- **Host:** `127.0.0.1`
+- **Database:** `app1`
+- **Username:** `app1user`
+- **Password:** `app1user`
+
+The database and user already existed, so I needed to restore the connection without replacing either one. The fix also had to persist after a reboot.
+
+## Step 1: Check PostgreSQL status
+
+I started by checking the PostgreSQL service:
+
+```bash
+sudo systemctl status postgresql
+```
+
+The service showed `active (exited)`. I continued investigating because Debian can use this top-level service as a wrapper for the actual PostgreSQL cluster.
+
+## Step 2: Find the configuration files
+
+I queried PostgreSQL to identify the active configuration paths:
+
+```bash
+sudo -u postgres psql -c "SHOW hba_file;"
+sudo -u postgres psql -c "SHOW config_file;"
+```
+
+The results identified these files:
+
+```text
+/var/lib/postgresql/17/main/pg_hba.conf
+/etc/postgresql/17/main/postgresql.conf
+```
+
+The important file for this problem was `pg_hba.conf`, which controls client authentication.
+
+## Step 3: Inspect the authentication rules
+
+I inspected the authentication configuration:
+
+```bash
+sudo cat /var/lib/postgresql/17/main/pg_hba.conf
+```
+
+The relevant rules were:
+
+```text
+host    all    all    0.0.0.0/0    reject
+host    all    all    ::/0         reject
+
+host    app1   app1user    127.0.0.1/32    trust
+host    app1   app1user    ::1/128        trust
+```
+
+The problem was the **order of the rules**.
+
+PostgreSQL checks authentication rules from top to bottom and uses the first matching rule. The broad `reject` rules appeared before the rules intended to allow the application, so the connection was rejected.
+
+## Step 4: Reproduce the failure
+
+I ran the challenge's required connection test:
+
+```bash
+PGPASSWORD=app1user psql -h 127.0.0.1 -d app1 -U app1user -c '\q'
+```
+
+The connection failed with an error indicating that `pg_hba.conf` rejected the connection from `127.0.0.1`.
+
+This confirmed that the authentication configuration needed to be corrected.
+
+## Step 5: Back up and edit the configuration
+
+I created a backup:
+
+```bash
+sudo cp /var/lib/postgresql/17/main/pg_hba.conf \
+  /var/lib/postgresql/17/main/pg_hba.conf.bak
+```
+
+Then I opened the active file:
+
+```bash
+sudo nano /var/lib/postgresql/17/main/pg_hba.conf
+```
+
+I moved the application-specific rules above the broad rejection rules and configured password authentication:
+
+```text
+# Local socket connections
+local   all    postgres                          peer
+local   all    all                               peer
+
+# Allow the application over localhost TCP
+host    app1   app1user    127.0.0.1/32          scram-sha-256
+host    app1   app1user    ::1/128               scram-sha-256
+
+# Reject other TCP clients
+host    all    all         0.0.0.0/0              reject
+host    all    all         ::/0                  reject
+```
+
+This configuration allows the application to authenticate using its existing password while retaining the rejection rules for other TCP clients.
+
+I did not replace the database or create a new user.
+
+## Step 6: Reload PostgreSQL
+
+After saving the file, I reloaded PostgreSQL:
+
+```bash
+sudo systemctl reload postgresql
+```
+
+A reload applies the authentication configuration without requiring a full server restart.
+
+## Step 7: Verify the connection
+
+I reran the exact test required by the challenge:
+
+```bash
+PGPASSWORD=app1user psql -h 127.0.0.1 -d app1 -U app1user -c '\q'
+```
+
+If the command exits successfully without an error, the connection is restored.
+
+I then ran the SadServers verification script:
+
+```bash
+/home/admin/agent/check.sh
+```
+
+**Final status:** Update this section after confirming the checker's result.
+
+## What I learned
+
+- PostgreSQL client authentication is controlled by `pg_hba.conf`.
+- Rule order matters: PostgreSQL uses the first matching rule.
+- A broad `reject` rule can block a connection even when a valid allow-rule exists later in the file.
+- `SHOW hba_file;` identifies the active authentication configuration.
+- Reloading PostgreSQL applies configuration changes without a full restart.
+- Editing the persistent configuration file allows the fix to survive a reboot.
+
+**Main takeaway:** When troubleshooting PostgreSQL connection failures, inspect the active `pg_hba.conf`, verify rule order, preserve existing credentials, and test the exact connection command.
