@@ -1,0 +1,148 @@
+# SadServers – Minneapolis: Break a CSV File
+
+**Difficulty:** Easy  
+**OS:** Debian 13  
+**Root Access:** Yes  
+**Category:** Linux / Bash / File Manipulation
+
+## Problem Description
+
+The task was to split `/home/admin/data.csv` into exactly 10 smaller files of approximately equal size.
+
+Requirements:
+- Generate exactly 10 files.
+- Name them `data-00.csv` through `data-09.csv`.
+- Preserve the original CSV header (first line) in every output file.
+- Ensure no output file exceeds 32 KB.
+- All files must be stored in `/home/admin/`.
+
+## Solution
+
+### Step 1: Navigate to the working directory
+
+```bash
+cd /home/admin
+```
+
+Inspect the original CSV file:
+
+```bash
+ls -lh data.csv
+head -n 5 data.csv
+```
+
+### Step 2: Extract the CSV header
+
+Save the first line of the original CSV file:
+
+```bash
+head -n 1 data.csv > header.tmp
+```
+
+### Step 3: Split the remaining data into 10 parts
+
+Remove the header from the input stream and split the remaining content:
+
+```bash
+tail -n +2 data.csv | split -n 10 - data-part-
+```
+
+This generates 10 approximately equal chunks named `data-part-aa`, `data-part-ab`, and so on.
+
+### Step 4: Add the header to each chunk
+
+Use a Bash loop to prepend the original header and generate the required filenames:
+
+```bash
+i=0
+
+for file in data-part-*; do
+    output=$(printf "data-%02d.csv" "$i")
+    cat header.tmp "$file" > "$output"
+    i=$((i + 1))
+done
+```
+
+### Step 5: Remove temporary files
+
+```bash
+rm -f data-part-* header.tmp
+```
+
+## Verification
+
+**1. Check the number of generated files:**
+
+```bash
+ls data-*.csv | wc -l
+```
+
+Expected output:
+
+```text
+10
+```
+
+**2. Check the output filenames:**
+
+```bash
+ls data-*.csv
+```
+
+Expected files:
+
+```text
+data-00.csv
+data-01.csv
+data-02.csv
+data-03.csv
+data-04.csv
+data-05.csv
+data-06.csv
+data-07.csv
+data-08.csv
+data-09.csv
+```
+
+**3. Verify that every file contains the original header:**
+
+```bash
+for file in data-*.csv; do
+    echo "$file:"
+    head -n 1 "$file"
+done
+```
+
+**4. Check file sizes:**
+
+```bash
+du -b data-*.csv
+```
+
+Every output file must be no larger than 32 KB (32,768 bytes).
+
+## Key Linux Commands Learned
+
+| Command | Purpose |
+|---|---|
+| `head -n 1` | Extract the first line |
+| `tail -n +2` | Skip the first line |
+| `split -n 10` | Divide input into 10 chunks |
+| `cat` | Combine file contents |
+| `printf` | Generate zero-padded filenames |
+| `rm -f` | Remove temporary files |
+| `du -b` | Display file sizes in bytes |
+
+## Important Note
+
+The challenge explicitly allows splitting at arbitrary byte positions, so the resulting files do not need to preserve CSV row boundaries.
+
+Also, `split -n 10` creates approximately equal chunks, but adding a header to each chunk increases its size. Always verify the 32 KB limit before considering the task complete.
+
+## Final Result
+
+The CSV file was divided into 10 output files, with the original header prepended to each file and the required naming convention applied.
+
+**Challenge:** Minneapolis – Break a CSV File  
+**Platform:** SadServers  
+**Status:** Verified using the Check My Solution test.
