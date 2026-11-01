@@ -1,0 +1,88 @@
+# SadServers – Bata: Find in /proc
+
+**Difficulty:** Easy  
+**OS:** Debian 11  
+**Category:** Linux / Process Filesystem / File Search
+
+## Problem Description
+
+A secret password is stored in a file somewhere under `/proc/sys`.
+
+The file contents start with:
+
+```text
+secret:
+```
+
+The objective is to:
+1. Find the file containing the secret.
+2. Extract the word following `secret:`.
+3. Save the extracted password to `/home/admin/secret.txt`.
+4. Ensure the output file ends with a newline.
+
+Root or sudo access is not available.
+
+## Solution
+
+### Step 1: Search for the secret file
+
+```bash
+grep -rsl '^secret:' /proc/sys 2>/dev/null
+```
+
+**Explanation:**
+- `grep` searches file contents.
+- `-r` recursively searches directories.
+- `-s` suppresses error messages.
+- `-l` displays matching filenames only.
+- `^secret:` matches lines beginning with `secret:`.
+- `2>/dev/null` redirects error messages.
+
+### Step 2: Extract the secret
+
+```bash
+grep -rh '^secret:' /proc/sys 2>/dev/null | head -n 1 | cut -d ':' -f 2- | while IFS= read -r password; do printf '%s\n' "$password" > /home/admin/secret.txt; done
+```
+
+This command:
+- Searches recursively for the matching content.
+- Reads the matching file contents.
+- Selects the first matching result.
+- Extracts everything after the colon.
+- Writes the password to `secret.txt` with a newline.
+
+### Step 3: Verify the solution
+
+```bash
+cat /home/admin/secret.txt
+md5sum /home/admin/secret.txt
+```
+
+Expected MD5 checksum:
+
+```text
+a7fcfd21da428dd7d4c5bb4c2e2207c4
+```
+
+## Key Linux Concepts
+
+| Command | Purpose |
+|---|---|
+| `grep` | Search text patterns |
+| `-r` | Recursive search |
+| `-l` | Display matching filenames |
+| `-h` | Hide filenames in output |
+| `head -n 1` | Select the first result |
+| `cut -d ':' -f 2-` | Extract text after the colon |
+| `printf '%s\n'` | Write text followed by a newline |
+| `2>/dev/null` | Suppress error messages |
+
+## Final Result
+
+The password was extracted from a file under `/proc/sys` and saved to:
+
+`/home/admin/secret.txt`
+
+The MD5 checksum was used to verify the expected file contents.
+
+**Key Learning:** Linux exposes kernel and system information through the virtual `/proc` filesystem. Recursive text searches with `grep` can help locate specific information without root privileges.
