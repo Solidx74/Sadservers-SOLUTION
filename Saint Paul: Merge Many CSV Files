@@ -1,0 +1,79 @@
+# SadServers – Saint Paul: Merge Many CSV Files
+
+**Difficulty:** Easy  
+**OS:** Debian 11  
+**Category:** Linux / File Management / CSV Processing
+
+## Problem Description
+
+Merge all 338 CSV files matching:
+
+`/home/admin/polldayregistrations_enregistjourduscrutin?????.csv`
+
+Into one file:
+
+`/home/admin/all.csv`
+
+### Requirements
+- Merge the contents of all 338 CSV files.
+- Preserve all data rows.
+- Include the column names (header) only once.
+- The input files can be merged in any order.
+- No root privileges required.
+
+## Solution
+
+### Step 1: Navigate to the directory
+
+```bash
+cd /home/admin
+```
+
+### Step 2: Write the header once
+
+```bash
+head -n 1 polldayregistrations_enregistjourduscrutin?????.csv | head -n 1 > all.csv
+```
+
+This extracts the first line from the first matching CSV file and writes it to `all.csv`.
+
+### Step 3: Append data from all CSV files
+
+```bash
+for file in polldayregistrations_enregistjourduscrutin?????.csv; do
+    tail -n +2 "$file" >> all.csv
+done
+```
+
+Explanation:
+- The `for` loop iterates over all matching CSV files.
+- `tail -n +2` skips the first line (header) of each file.
+- `>>` appends the remaining data rows to `all.csv`.
+
+### Step 4: Verify the output
+
+```bash
+head -n 1 all.csv
+wc -l all.csv
+ls -lh all.csv
+```
+
+## Key Linux Commands
+
+| Command | Purpose |
+|---|---|
+| `head -n 1` | Extracts the first line |
+| `tail -n +2` | Skips the header row |
+| `>` | Creates or overwrites a file |
+| `>>` | Appends data to a file |
+| `for` | Iterates through multiple files |
+
+## Final Result
+
+Successfully merged all 338 CSV files into:
+
+`/home/admin/all.csv`
+
+The resulting file contains one header row followed by the data rows from all input files, without repeating the headers.
+
+**Key Learning:** Use shell globbing, loops, `head`, and `tail` to efficiently combine multiple CSV files while preserving a single header row.
